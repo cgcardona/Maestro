@@ -23,7 +23,9 @@ This process simulates a guided standup session with an "AI Standup Manager" to 
 
 **Steps:**
 
-1.  **Prime the LLM:** Start a new conversation with your chosen LLM. Provide it with the role prompt defined in [`docs/standup-agent-role-prompt.md`](docs/standup-agent-role-prompt.md). This sets the context for the LLM to act as an expert AI Standup Manager.
+1.  **Prime the LLM:** Start a new conversation with your chosen LLM. Provide it with:
+    *   The role prompt defined in [`docs/standup-agent-role-prompt.md`](docs/standup-agent-role-prompt.md). This sets the context for the LLM to act as an expert AI Standup Manager.
+    *   The content of the task specification template from [`docs/task-specification-template.md`](docs/task-specification-template.md). This provides a clear example of the desired output format for each atomic task.
 2.  **Follow the Framework:** Engage in a dialogue with the LLM, following the principles and questions outlined in the [`docs/standup-agent-framework.md`](docs/standup-agent-framework.md). This includes:
     *   Discussing your accomplishments, current work, and blockers.
     *   Exploring and clarifying your objectives for the day.
