@@ -1,0 +1,46 @@
+# macOS
+.DS_Store
+Desktop.ini
+Thumbs.db
+.AppleDouble
+.LSOverride
+
+# Xcode
+#
+# gitignore contributors: remember to update Global/Xcode.gitignore, Objective-C.gitignore & Swift.gitignore
+
+## User settings
+xcuserdata/
+
+## Xcode project files
+*.xcodeproj
+*.xcworkspace
+
+## Build Time Data
+DerivedData/
+Build/
+.build/
+
+## Swift Package Manager
+Packages/
+*.resolved
+SourcePackages/
+
+# Local dependencies
+Pods/
+
+# Carthage
+Carthage/Build
+Carthage/Checkouts
+
+# fastlane
+#
+# It is recommended to not store fastlane/report.xml
+# See https://docs.fastlane.tools/advanced/#ignoring-reportxml
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*
+fastlane/test_output/**/*
+
+reports/
+standups/
