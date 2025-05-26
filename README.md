@@ -15,6 +15,24 @@
 *   **Mock Modes:** Supports mock modes for API services (Anthropic, Ollama) for testing without actual API calls.
 *   **Version Control Integration (Planned):** Future support for Git operations like branching, conventional commits, and PR creation via `gh`.
 
+## Generating Your Daily Task File (Standup Preparation)
+
+Before running Maestro to execute tasks, you first need a well-defined Markdown task file. The project includes a framework to help you generate this file by interacting with a Large Language Model (LLM) of your choice (e.g., ChatGPT, Claude, or a local Ollama model via a separate chat interface).
+
+This process simulates a guided standup session with an "AI Standup Manager" to break down your high-level goals into the atomic, structured tasks that Maestro requires.
+
+**Steps:**
+
+1.  **Prime the LLM:** Start a new conversation with your chosen LLM. Provide it with the role prompt defined in [`docs/standup-agent-role-prompt.md`](docs/standup-agent-role-prompt.md). This sets the context for the LLM to act as an expert AI Standup Manager.
+2.  **Follow the Framework:** Engage in a dialogue with the LLM, following the principles and questions outlined in the [`docs/standup-agent-framework.md`](docs/standup-agent-framework.md). This includes:
+    *   Discussing your accomplishments, current work, and blockers.
+    *   Exploring and clarifying your objectives for the day.
+    *   Using the **Task Breakdown Methodology** to decompose your goals into smaller, atomic tasks.
+3.  **Format Tasks:** Ensure each atomic task is specified according to the template found in [`docs/task-specification-template.md`](docs/task-specification-template.md). This format is crucial for Maestro to correctly parse and execute the tasks.
+4.  **Produce the Standup File:** The output of this collaborative session should be a Markdown file named using the convention `YYYY-MM-DD-standup.md` (e.g., `2025-05-28-standup.md`). This file will contain your high-level objectives and the detailed atomic tasks ready for Maestro.
+
+Once you have this `YYYY-MM-DD-standup.md` file, you can then proceed to use Maestro to execute the tasks as described in the "Usage" section below.
+
 ## Architecture Overview
 
 Maestro's architecture consists of a central `ManagerAgent` and a suite of `SpecialistAgent` implementations:
