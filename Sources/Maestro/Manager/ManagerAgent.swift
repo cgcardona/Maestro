@@ -33,6 +33,12 @@ class ManagerAgent {
     private var standupFileDirectory: String?
     private var currentRunOutputDirectoryPath: String?
     
+    // Locks for thread-safety
+    private let completedTasksLock = NSLock()
+    private let activeTasksLock = NSLock()
+    private let standupFileLock = NSLock()
+    private let progressFileLock = NSLock()
+    
     private init() {}
     
     // MARK: - Public Interface
@@ -100,83 +106,142 @@ class ManagerAgent {
             throw ManagerError.cannotCreateOutputDirectory(self.currentRunOutputDirectoryPath ?? "Unknown Path")
         }
 
-        print("🚀 Manager Agent starting execution of \(taskQueue.count) tasks")
+        print("🚀 Manager Agent starting parallel execution of \(taskQueue.count) tasks")
         
         let startTime = Date()
-        var successCount = 0
-        var failureCount = 0
-        
-        for task in taskQueue {
-            do {
-                let result = try await executeTask(task)
-                completedTasks.append(result)
-                
-                if result.status == .completed {
-                    successCount += 1
-                    print("✅ Task completed: \(task.title)")
-                } else {
-                    failureCount += 1
-                    print("❌ Task failed: \(task.title)")
+        var localSuccessCount = 0
+        var localFailureCount = 0
+        // completedTasks will be populated by the tasks in the group
+        var allTaskResults: [TaskResult] = []
+
+
+        try await withThrowingTaskGroup(of: TaskResult.self) { group in
+            for task in taskQueue {
+                group.addTask {
+                    // Manage active tasks
+                    self.activeTasksLock.lock()
+                    self.activeTasks[task.id] = task
+                    self.activeTasksLock.unlock()
+
+                    var taskResult: TaskResult
+                    do {
+                        // Execute the task using the original executeTask logic (simplified here)
+                        guard let agent = self.findBestAgent(for: task) else {
+                            throw ManagerError.noSuitableAgent(task.title)
+                        }
+                        print("👤 Assigned to: \(agent.role) for task: \(task.title)")
+                        guard let runOutputDir = self.currentRunOutputDirectoryPath else {
+                             throw ManagerError.cannotCreateOutputDirectory("Output directory path not available for task execution.")
+                        }
+                        taskResult = try await agent.execute(task: task, outputDirectoryPath: runOutputDir)
+                        
+                        // Update standup file
+                        self.standupFileLock.lock()
+                        try await self.updateStandupFileStatus(task: task, result: taskResult)
+                        self.standupFileLock.unlock()
+
+                    } catch {
+                        print("❌ Task error during execution: \(task.title) - \(error.localizedDescription)")
+                        taskResult = TaskResult(
+                            taskId: task.id,
+                            content: "Task failed with error: \(error.localizedDescription)",
+                            status: .failed,
+                            notes: "Execution failed: \(error)"
+                        )
+                        // Still try to update standup file with failure
+                        self.standupFileLock.lock()
+                        try? await self.updateStandupFileStatus(task: task, result: taskResult)
+                        self.standupFileLock.unlock()
+                    }
+
+                    // Manage completed tasks (add result)
+                    self.completedTasksLock.lock()
+                    self.completedTasks.append(taskResult)
+                    // Atomically update counts
+                    if taskResult.status == .completed {
+                        // successCount += 1 // This needs to be atomic or updated at the end
+                        print("✅ Task completed: \(task.title)")
+                    } else {
+                        // failureCount += 1 // This needs to be atomic or updated at the end
+                        print("❌ Task failed or completed with non-success status: \(task.title)")
+                    }
+                    self.completedTasksLock.unlock() // Unlock after modifying completedTasks and logging
+
+                    // Prepare data for saveProgress under appropriate locks
+                    self.completedTasksLock.lock()
+                    let completedForProgress = self.completedTasks
+                    self.completedTasksLock.unlock()
+
+                    self.activeTasksLock.lock()
+                    let activeForProgress = Array(self.activeTasks.values)
+                    self.activeTasksLock.unlock()
+                    
+                    // Save overall progress - lock is now only around the file write itself in saveProgress
+                    // The progressFileLock around the call site serializes calls to saveProgress.
+                    self.progressFileLock.lock()
+                    try await self.saveProgress(completedTasksSnapshot: completedForProgress,
+                                                activeTasksSnapshot: activeForProgress,
+                                                totalQueuedTasks: self.taskQueue.count)
+                    self.progressFileLock.unlock()
+                    
+                    // Remove from active tasks
+                    self.activeTasksLock.lock()
+                    self.activeTasks.removeValue(forKey: task.id)
+                    self.activeTasksLock.unlock()
+                    
+                    return taskResult
                 }
-                
-                // Update standup file with completion status
-                try await updateStandupFileStatus(task: task, result: result)
-                
-                // Save progress after each task
-                try await saveProgress()
-                
-            } catch {
-                failureCount += 1
-                print("❌ Task error: \(task.title) - \(error.localizedDescription)")
-                
-                // Create failure result
-                let failureResult = TaskResult(
-                    taskId: task.id,
-                    content: "Task failed with error: \(error.localizedDescription)",
-                    status: .failed,
-                    notes: "Execution failed: \(error)"
-                )
-                completedTasks.append(failureResult)
-                
-                // Update standup file with failure status
-                try? await updateStandupFileStatus(task: task, result: failureResult)
+            }
+            
+            // Collect all results from the group
+            for try await result in group {
+                allTaskResults.append(result)
+                if result.status == .completed {
+                    localSuccessCount += 1
+                } else {
+                    localFailureCount += 1
+                }
             }
         }
         
+        // Ensure completedTasks reflects all results for the summary, even if saveProgress was called incrementally.
+        // This might be redundant if completedTasks is correctly populated by each task.
+        // For clarity, we will use allTaskResults which is definitively from this run.
+        // However, saveProgress and generateExecutionReport use self.completedTasks.
+        // Let's ensure self.completedTasks is the single source of truth for completed tasks in this run.
+        // The current logic within the group task already appends to self.completedTasks.
+
         let duration = Date().timeIntervalSince(startTime)
         
         let summary = ExecutionSummary(
             totalTasks: taskQueue.count,
-            successCount: successCount,
-            failureCount: failureCount,
+            successCount: localSuccessCount,
+            failureCount: localFailureCount,
             duration: duration,
-            results: completedTasks
+            results: self.completedTasks // self.completedTasks should have all results by now.
         )
         
         try await generateExecutionReport(summary)
         
-        print("🎯 Execution complete: \(successCount)/\(taskQueue.count) tasks successful")
+        print("🎯 Execution complete: \(localSuccessCount)/\(taskQueue.count) tasks successful")
         return summary
     }
     
     func executeTask(_ task: AgentTask) async throws -> TaskResult {
         print("🎯 Manager assigning task: \(task.title)")
         
-        // Find the best agent for this task
         guard let agent = findBestAgent(for: task) else {
             throw ManagerError.noSuitableAgent(task.title)
         }
         
-        print("👤 Assigned to: \(agent.role)")
-        activeTasks[task.id] = task
+        print("👤 Assigned to: \(agent.role) for task: \(task.title)")
+        // activeTasks[task.id] = task // This is now handled in executeAllTasks's group
         
-        // Execute the task, passing the currentRunOutputDirectoryPath
         guard let runOutputDir = currentRunOutputDirectoryPath else {
-            // This should ideally not happen if executeAllTasks set it up correctly
             throw ManagerError.cannotCreateOutputDirectory("Output directory path not available for task execution.")
         }
         let result = try await agent.execute(task: task, outputDirectoryPath: runOutputDir)
-        activeTasks.removeValue(forKey: task.id)
+        // activeTasks.removeValue(forKey: task.id) // This is now handled in executeAllTasks's group
         
         return result
     }
@@ -474,25 +539,32 @@ class ManagerAgent {
     
     // MARK: - Progress & Reporting
     
-    private func saveProgress() async throws {
+    private func saveProgress(completedTasksSnapshot: [TaskResult], activeTasksSnapshot: [AgentTask], totalQueuedTasks: Int) async throws {
+        // progressFileLock is acquired by the caller of this method to serialize file access.
+        // This method no longer acquires completedTasksLock or activeTasksLock internally.
+
         guard let outputDir = currentRunOutputDirectoryPath else {
             print("🚨 Error: Run output directory not set. Cannot save progress.")
             return
         }
+        
         let fileTimestamp = Int(Date().timeIntervalSince1970)
-        let progressFileName = "execution-progress-\(fileTimestamp).json" // Changed extension to .json
+        let progressFileName = "execution-progress-\(fileTimestamp).json"
         let progressFile = URL(fileURLWithPath: outputDir).appendingPathComponent(progressFileName).path
         
         let currentProgress = ExecutionProgress(
-            completedTasks: self.completedTasks,
-            remainingTasks: self.taskQueue.count - self.completedTasks.count,
-            activeTasks: Array(self.activeTasks.values)
+            completedTasks: completedTasksSnapshot,
+            remainingTasks: totalQueuedTasks - completedTasksSnapshot.count,
+            activeTasks: activeTasksSnapshot
         )
 
         let encoder = JSONEncoder()
-        encoder.outputFormatting = .prettyPrinted // For readable JSON output
+        encoder.outputFormatting = .prettyPrinted
         let jsonData = try encoder.encode(currentProgress)
         
+        // The actual file write should be protected if multiple tasks could reach here
+        // simultaneously without external locking. The current design in executeAllTasks
+        // uses progressFileLock around the call to this method.
         try jsonData.write(to: URL(fileURLWithPath: progressFile), options: .atomic)
         
         print("💾 Progress saved to: \(progressFile)")

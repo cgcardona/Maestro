@@ -13,19 +13,18 @@ class AnthropicAPI {
         self.apiKey = ProcessInfo.processInfo.environment["ANTHROPIC_API_KEY"] ?? ""
         self.mockMode = apiKey.isEmpty
         
-        if mockMode {
-            print("🧪 Running in mock mode (no API key provided)")
-        }
+        // No mock mode logging here; it's handled in the complete() method
+        // to provide accurate context based on Ollama's availability.
     }
     
     func complete(prompt: String, model: String = "claude-3-sonnet-20240229") async throws -> String {
         if mockMode {
             // Try Ollama first
             if await OllamaAPI.shared.isAvailable() {
-                print("🦙 Using Ollama for local inference")
+                print("🦙 Anthropic API key not found, but Ollama is available. Using Ollama for local inference.")
                 return try await OllamaAPI.shared.complete(prompt: prompt)
             } else {
-                print("🧪 Ollama not available, using mock mode")
+                print("🧪 Anthropic API key not found AND Ollama not available. Using Anthropic mock response.")
                 return generateMockResponse(for: prompt)
             }
         }

@@ -2,20 +2,51 @@ import Foundation
 import AsyncHTTPClient
 import NIOCore
 
+// Simple AsyncSemaphore implementation
+actor AsyncSemaphore {
+    private var count: Int
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    init(count: Int) {
+        self.count = count
+    }
+
+    func wait() async {
+        if count > 0 {
+            count -= 1
+            return
+        }
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
+    }
+
+    func signal() {
+        if waiters.isEmpty {
+            count += 1
+        } else {
+            let waiter = waiters.removeFirst()
+            waiter.resume()
+        }
+    }
+}
+
 class OllamaAPI {
     static let shared = OllamaAPI()
     
     private let httpClient: HTTPClient
-    private let baseURL = "http://localhost:11434"
+    private let baseURL: String
     private let model: String
+    private let ollamaSemaphore: AsyncSemaphore
     
     private init() {
         self.httpClient = HTTPClient(eventLoopGroupProvider: .singleton)
         
-        // Default to llama3.2:3b, but can be configured
-        self.model = ProcessInfo.processInfo.environment["OLLAMA_MODEL"] ?? "llama3.2:3b"
+        self.baseURL = ProcessInfo.processInfo.environment["OLLAMA_API_BASE_URL"] ?? "http://localhost:11434"
+        self.model = ProcessInfo.processInfo.environment["OLLAMA_DEFAULT_MODEL"] ?? "llama3.2:3b"
+        self.ollamaSemaphore = AsyncSemaphore(count: 3)
         
-        print("🦙 OllamaAPI initialized with model: \(model)")
+        print("🦙 OllamaAPI initialized with model: \(model) at base URL: \(baseURL)")
     }
     
     deinit {
@@ -23,6 +54,9 @@ class OllamaAPI {
     }
     
     func complete(prompt: String, model: String? = nil) async throws -> String {
+        await ollamaSemaphore.wait()
+        defer { Task { await ollamaSemaphore.signal() } }
+
         let selectedModel = model ?? self.model
         let requestBody = OllamaRequest(
             model: selectedModel,
@@ -43,7 +77,7 @@ class OllamaAPI {
         request.headers.add(name: "Content-Type", value: "application/json")
         request.body = .bytes(requestData)
         
-        print("🦙 Sending request to Ollama...")
+        print("🦙 Sending request to Ollama for model \(selectedModel)...")
         
         let response = try await httpClient.execute(request, timeout: .seconds(120))
         
@@ -62,6 +96,8 @@ class OllamaAPI {
     }
     
     func isAvailable() async -> Bool {
+        await ollamaSemaphore.wait()
+        defer { Task { await ollamaSemaphore.signal() } }
         do {
             var request = HTTPClientRequest(url: "\(baseURL)/api/tags")
             request.method = .GET
@@ -74,6 +110,8 @@ class OllamaAPI {
     }
     
     func listModels() async throws -> [String] {
+        await ollamaSemaphore.wait()
+        defer { Task { await ollamaSemaphore.signal() } }
         var request = HTTPClientRequest(url: "\(baseURL)/api/tags")
         request.method = .GET
         
