@@ -78,7 +78,7 @@ Maestro will then:
 *   Load incomplete tasks from the specified file.
 *   Execute them sequentially using the best-matched specialist agents.
 *   Update the standup file in place with task statuses and results.
-*   Generate `execution-progress-[timestamp].json` and `execution-report-[timestamp].md` files in the same directory as the standup file.
+*   Generate `execution-progress-[timestamp].json` and `execution-report-[timestamp].md` files in the `reports/[run_timestamp]` directory.
 
 ### Environment Variables
 

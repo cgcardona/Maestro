@@ -479,69 +479,21 @@ class ManagerAgent {
             print("🚨 Error: Run output directory not set. Cannot save progress.")
             return
         }
-        let fileTimestamp = Int(Date().timeIntervalSince1970) // Renamed to avoid conflict
-        let progressFileName = "execution-progress-\(fileTimestamp).md" // Changed extension to .md
+        let fileTimestamp = Int(Date().timeIntervalSince1970)
+        let progressFileName = "execution-progress-\(fileTimestamp).json" // Changed extension to .json
         let progressFile = URL(fileURLWithPath: outputDir).appendingPathComponent(progressFileName).path
         
-        // Create an instance of ExecutionProgress to access its data
-        // Note: `taskQueue` refers to all initially loaded incomplete tasks for the current run.
-        // `completedTasks` accumulates all tasks completed across potentially multiple `saveProgress` calls in a single run.
         let currentProgress = ExecutionProgress(
-            completedTasks: self.completedTasks, // Tasks completed so far in this run
-            remainingTasks: self.taskQueue.count - self.completedTasks.count, // Tasks from initial queue yet to be completed
-            activeTasks: Array(self.activeTasks.values) // Tasks currently being processed
+            completedTasks: self.completedTasks,
+            remainingTasks: self.taskQueue.count - self.completedTasks.count,
+            activeTasks: Array(self.activeTasks.values)
         )
 
-        var markdownContent = """
-        # Agent Orchestrator Execution Progress
-
-        **Generated:** \(DateFormatter.shortDateTime.string(from: Date()))
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .prettyPrinted // For readable JSON output
+        let jsonData = try encoder.encode(currentProgress)
         
-        ## Overall Progress Summary
-        - 🔵 **Total Tasks in Queue (for this run):** \(self.taskQueue.count)
-        - ✅ **Completed Tasks (so far this run):** \(currentProgress.completedTasks.count)
-        - ⏳ **Remaining Tasks (in queue):** \(currentProgress.remainingTasks)
-        - 🔄 **Active Tasks (currently processing):** \(currentProgress.activeTasks.count)
-        """
-
-        if !currentProgress.activeTasks.isEmpty {
-            markdownContent += "\n\n        ## 🔄 Active Tasks\n"
-            for (index, task) in currentProgress.activeTasks.enumerated() {
-                markdownContent += """
-                ### \(index + 1). \(task.title)
-                - **Goal:** \(task.goal)
-                - **Complexity:** \(task.complexity.rawValue)
-                - **Status:** \(task.status.rawValue)
-                ---
-                """
-            }
-        }
-
-        if !currentProgress.completedTasks.isEmpty {
-            markdownContent += "\n\n        ## ✅ Completed Tasks (This Run)\n"
-            for (index, result) in currentProgress.completedTasks.enumerated() {
-                // Attempt to find the original task details for more context if needed
-                // This part assumes `result.taskId` can be used to fetch more details if necessary
-                // For now, we'll use what's available in TaskResult and try to find the title from active or queued tasks.
-                let taskTitle = activeTasks[result.taskId]?.title ?? taskQueue.first(where: { $0.id == result.taskId })?.title ?? "Unknown Task (ID: \(result.taskId))"
-                let statusEmoji = result.status == .completed ? "✅" : "❌"
-                
-                markdownContent += """
-                ### \(index + 1). \(statusEmoji) \(taskTitle)
-                - **Task ID:** \(result.taskId)
-                - **Status:** \(result.status.rawValue)
-                - **Completed At:** \(DateFormatter.shortDateTime.string(from: result.completedAt))
-                - **Notes:** \(result.notes ?? "None")
-                **Content Preview:**
-                ```
-                \(String(result.content.prefix(200)))...
-                ```
-                ---
-                """
-            }
-        }
-        
-        try markdownContent.write(to: URL(fileURLWithPath: progressFile), atomically: true, encoding: .utf8)
+        try jsonData.write(to: URL(fileURLWithPath: progressFile), options: .atomic)
         
         print("💾 Progress saved to: \(progressFile)")
     }
