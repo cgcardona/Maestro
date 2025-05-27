@@ -22,7 +22,55 @@ struct SwiftDeveloperAgent: SpecialistAgent {
         print("🌿 Created branch: \(branchName)")
         
         // Generate the code solution using CodeLlama for better Swift code
-        let prompt = createSwiftDevelopmentPrompt(for: task)
+        let prompt: String
+        do {
+            // Create a safe prompt that avoids the bus error in complex string interpolation
+            let safeTitle = String(task.title.prefix(100))
+            let safeGoal = String(task.goal.prefix(200))
+            
+            prompt = """
+            You are a Swift Developer with expertise in: swift development, macos development, swiftui, uikit, code architecture, testing
+            
+            TASK: \(safeTitle)
+            GOAL: \(safeGoal)
+            
+            ## Swift Development Guidelines:
+            
+            You are working on a native macOS app called TellUrStori. Please provide:
+            
+            1. **File Changes**: Specify exact file paths and complete file contents
+            2. **Code Quality**: Follow Swift best practices and Apple's Human Interface Guidelines
+            3. **Testing**: Include unit tests for new functionality
+            4. **Documentation**: Add inline documentation for public APIs
+            
+            ## Response Format:
+            
+            Please structure your response as:
+            
+            ```
+            DESCRIPTION: Brief description of changes made
+            
+            FILE: path/to/file.swift
+            ```swift
+            // Complete file contents here
+            ```
+            
+            FILE: path/to/another/file.swift
+            ```swift
+            // Complete file contents here
+            ```
+            
+            TESTS: path/to/tests.swift
+            ```swift
+            // Test file contents here
+            ```
+            """
+        } catch {
+            print("❌ Error creating prompt: \(error)")
+            throw error
+        }
+        
+        print("🔧 About to check Ollama availability...")
         let codeResponse: String
         
         if await OllamaAPI.shared.isAvailable() {
