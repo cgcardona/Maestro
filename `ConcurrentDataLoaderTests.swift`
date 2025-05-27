@@ -1,0 +1,19 @@
+import XCTest
+@testable import Maestro
+
+class ConcurrentDataLoaderTests: XCTestCase {
+    var dataLoader: ConcurrentDataLoader!
+    
+    override func setUp() {
+        super.setUp()
+        
+        dataLoader = ConcurrentDataLoader()
+    }
+    
+    func testLoadDataFromSources() {
+        let sources = [URL(string: "https://example.com")!, URL(string: "http://example.org")!]
+        dataLoader.loadData(fromSources: sources)
+        
+        XCTAssertEqual(dataLoader.getLoadedData(), [:])
+    }
+}

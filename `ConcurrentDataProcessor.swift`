@@ -1,0 +1,24 @@
+import Foundation
+
+class ConcurrentDataProcessor {
+    private let queue = DispatchQueue(label: "com.example.maestro.data-processor", attributes: .concurrent)
+    private var processedData: [String: Any] = [:]
+    
+    func processData(fromSources sources: [URL]) {
+        for source in sources {
+            queue.async {
+                guard let data = self.loadedData[source] else { return }
+                
+                // Process the data...
+                print("Processed data from \(source)")
+                
+                // Update the processed data dictionary
+                self.processedData[source] = processedData
+            }
+        }
+    }
+    
+    func getProcessedData() -> [String: Any] {
+        return processedData
+    }
+}

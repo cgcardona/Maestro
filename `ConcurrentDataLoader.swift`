@@ -1,0 +1,28 @@
+import Foundation
+
+class ConcurrentDataLoader {
+    private let group = DispatchGroup()
+    private var loadedData: [String: Data] = [:]
+    
+    func loadData(fromSources sources: [URL]) {
+        for source in sources {
+            group.enter()
+            
+            URLSession.shared.dataTask(with: source) { data, _, _ in
+                if let data = data {
+                    self.loadedData[source] = data
+                }
+                
+                self.group.leave()
+            }.resume()
+        }
+        
+        group.notify(queue: .main) {
+            print("All data loaded successfully")
+        }
+    }
+    
+    func getLoadedData() -> [String: Data] {
+        return loadedData
+    }
+}
