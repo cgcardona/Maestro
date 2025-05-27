@@ -293,16 +293,20 @@ extension SwiftDeveloperAgent {
     }
     
     private func applyCodeChange(_ change: CodeChange) async throws {
-        let fileURL = URL(fileURLWithPath: change.filePath)
-        let directory = fileURL.deletingLastPathComponent()
+        // Ensure we're working with relative paths from the current directory
+        let currentDirectory = FileManager.default.currentDirectoryPath
+        let relativePath = change.filePath.hasPrefix("/") ? String(change.filePath.dropFirst()) : change.filePath
+        let fullPath = URL(fileURLWithPath: currentDirectory).appendingPathComponent(relativePath)
+        
+        let directory = fullPath.deletingLastPathComponent()
         
         // Create directory if it doesn't exist
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         
         // Write the file content
-        try change.content.write(to: fileURL, atomically: true, encoding: .utf8)
+        try change.content.write(to: fullPath, atomically: true, encoding: .utf8)
         
-        print("📁 Created/updated file: \(change.filePath)")
+        print("📁 Created/updated file: \(relativePath)")
     }
     
     private func buildProject() async throws -> BuildResult {
